@@ -1,0 +1,4 @@
+event_evaluation_operation_option:
+  path: '/evaluate/node/{node}'
+  requirements:
+    _permission: 'event any evaluation + event own evaluation'

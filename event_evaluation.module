@@ -1,0 +1,113 @@
+<?php
+
+use Drupal\views\ViewExecutable;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\group\Entity\Group;
+use Drupal\node\Entity\Node;
+
+const EVENT_EVALUTION_VIEW_ID = 'event_evaluation_view';
+const EVENT_EVALUTION_VIEW_DISPLAY_ID = 'event_evaluate_page_view';
+
+/**
+ * Implements hook_views_pre_view().
+ */
+function event_evaluation_views_pre_view(ViewExecutable $view, $display_id, &$args)
+{
+    if ($view->id() === EVENT_EVALUTION_VIEW_ID && $display_id === EVENT_EVALUTION_VIEW_DISPLAY_ID) {
+        if (!count($args)) {
+            throw new \Symfony\Component\HttpKernel\Exception\NotFoundHttpException();
+        }
+        $node_id = $args[0];
+        $node = Node::load($node_id);
+        if (!$node) {
+            throw new \Symfony\Component\HttpKernel\Exception\NotFoundHttpException();
+        }
+        /**
+         * Return access denied, when user is not authroized or can is not ready for evaluation.
+         */
+        if (!(isUserAuthorized($node) && canEvaluateEvent($node))) {
+            throw new \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException();
+        }
+
+        // Attache the evealution form in the evaluation view.
+        $view->attachment_after['header'] = [
+            '#type' => 'container',
+            '#id' => 'event_evaluation_form_continer',
+            'form_wrapper' => [
+                \Drupal::formBuilder()->getForm(new \Drupal\event_evaluation\Form\EventEvaluationForm($node))
+            ]
+        ];
+    }
+}
+
+
+/**
+ * Implements hook_entity_operation_alter().
+ *
+ * Add the evaluate option into the content type grid for CHAS Event contents.
+ */
+function event_evaluation_entity_operation_alter(array &$operations, EntityInterface $entity)
+{
+    if ($entity->getEntityTypeId() == 'node' && $entity->bundle() == 'chas_event') {
+
+        if (isUserAuthorized($entity) && canEvaluateEvent($entity)) {
+            $operations['evaluate'] = [
+                'title' => t('Evaluate'),
+                'weight' => 10,
+                'url' => \Drupal\Core\Url::fromRoute('event_evaluation_operation_option', [
+                    'node' => $entity->id(),
+                ]),
+            ];
+        }
+    }
+}
+
+/**
+ * Implements hook_cron().
+ * 
+ * Handle the evaluation cron job
+ */
+function event_evaluation_cron()
+{
+    \Drupal::service('event_evaluation.evaluation_email_cron')->notifyEndEventsForEvaluation();
+}
+
+/**
+ * Check is user is authroized for event evalution.
+ */
+function isUserAuthorized($node)
+{
+    $current_user = \Drupal::currentUser();
+    if ($current_user->hasRole('administrator')) {
+        return true;
+    }
+    $current_user_id = $current_user->id();
+    $owner_id = $node->getOwnerId();
+    $group_memberships = \Drupal::service('group.membership_loader')->loadByUser($current_user);
+    if ($group_memberships) {
+        $node_groups = $node->get('field_groups')->getValue();
+
+        foreach ($node_groups as $node_group) {
+            $group = Group::load($node_group['target_id']);
+            if ($group && $group->hasPermission('event own evaluation', $current_user) &&  $owner_id === $current_user_id) {
+                return true;
+            }
+        }
+        return false;
+    }
+    return $current_user->hasPermission('event own evaluation') && $owner_id === $current_user_id;
+}
+
+/**
+ * Check if the event is ready for the evaluation.
+ * 
+ */
+function canEvaluateEvent($node)
+{
+    if (!$node->get('status')->value) {
+        return false;
+    }
+    $current_time = time();
+    $event_schedule = (int) $node->get('field_event_ends_on')->getString();
+    return $event_schedule < $current_time;
+}

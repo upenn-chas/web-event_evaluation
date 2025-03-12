@@ -1,0 +1,9 @@
+name: "Event Evaluation"
+description: "Provide the form to evaluate the event."
+type: module
+core_version_requirement: ^10
+version: 1.0
+package: Custom
+dependencies:
+  - drupal:group
+  - drupal:views

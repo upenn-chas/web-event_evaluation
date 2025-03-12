@@ -1,0 +1,7 @@
+services:
+  event_evaluation.evaluation_email_cron:
+    class: \Drupal\event_evaluation\Cron\EvaluationEmailCron
+    arguments: ["@easy_email.handler", "@logger.factory"]
+  event_evaluation.evaluation_confirmation_handler:
+    class: \Drupal\event_evaluation\Service\EvaluationConfirmation
+    arguments: ["@easy_email.handler", "@logger.factory"]
